@@ -1,3 +1,8 @@
+# Reference materials — track notes/index (.md) but not downloaded binaries
+references/**/*.pdf
+references/**/*.epub
+references/**/*.zip
+
 # Build / simulation artifacts
 build/
 *.hex
