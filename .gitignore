@@ -1,0 +1,41 @@
+# Build / simulation artifacts
+build/
+*.hex
+*.vvp
+*.out
+tb_*.exe
+a.out
+
+# Waveforms
+*.vcd
+*.fst
+*.ghw
+verification/waveforms/*
+!verification/waveforms/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Vivado / Xilinx
+*.jou
+*.log
+*.str
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.gen/
+.Xil/
+vivado*.backup.*
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
