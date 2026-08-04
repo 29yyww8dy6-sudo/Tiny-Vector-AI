@@ -1,6 +1,6 @@
 # File Manifest
 
-총 32개 Markdown 파일
+총 33개 Markdown 파일
 
 - `MANIFEST.md`
 - `PLANNING.md`
@@ -10,6 +10,7 @@
 - `docs/adr/002-numerics.md`
 - `docs/adr/003-lane-count.md`
 - `docs/adr/004-tier0-vdot-lane1.md`
+- `docs/adr/005-tier-and-phase-operation.md`
 - `docs/bugs/000-template.md`
 - `docs/collaboration.md`
 - `docs/compiler-design.md`
