@@ -31,6 +31,7 @@ module tb_tiny_npu;
     always #5 clk = ~clk;
 
     integer i;
+    integer seed_index;
     integer errors = 0;
     integer timeout;
     reg [31:0] seed = 32'hC0FFEE;
@@ -39,9 +40,10 @@ module tb_tiny_npu;
     reg [31:0] got;
 
     task load_case(input integer mode);
+        integer idx;
         begin
             expected = 32'sd0;
-            for (i = 0; i < K; i = i + 1) begin
+            for (idx = 0; idx < K; idx = idx + 1) begin
                 if (mode == 0) begin
                     a_byte = $random(seed);
                     b_byte = $random(seed);
@@ -49,17 +51,17 @@ module tb_tiny_npu;
                     a_byte = -8'sd128;
                     b_byte = -8'sd128;
                 end
-                dut.dmem_i.mem[ADDR_A + i] = a_byte;
-                dut.dmem_i.mem[ADDR_B + i] = b_byte;
+                dut.dmem_i.mem[ADDR_A + idx] = a_byte;
+                dut.dmem_i.mem[ADDR_B + idx] = b_byte;
                 expected = expected + a_byte * b_byte;
             end
             // poison the output region so a silent no-op can't look like a pass
-            for (i = 0; i < 4; i = i + 1)
-                dut.dmem_i.mem[ADDR_OUT + i] = 8'hDE;
+            for (idx = 0; idx < 4; idx = idx + 1)
+                dut.dmem_i.mem[ADDR_OUT + idx] = 8'hDE;
         end
     endtask
 
-    task run_case(input integer mode);
+    task run_case(input integer mode, input integer inject_reset);
         begin
             load_case(mode);
 
@@ -71,6 +73,13 @@ module tb_tiny_npu;
             while (!done && timeout < 2000) begin
                 @(posedge clk);
                 timeout = timeout + 1;
+                // Reset while the first VDOT is active.  The program must
+                // restart cleanly and still produce the same architectural result.
+                if (inject_reset && timeout == 45) begin
+                    rst = 1;
+                    @(posedge clk); @(posedge clk);
+                    rst = 0;
+                end
             end
 
             if (!done) begin
@@ -93,8 +102,13 @@ module tb_tiny_npu;
         $dumpfile("build/tb_tiny_npu.vcd");
         $dumpvars(0, tb_tiny_npu);
 
-        run_case(0); // pseudo-random
-        run_case(1); // overflow-margin worst case
+        // Several deterministic random seeds make this a reproducible regression.
+        for (seed_index = 0; seed_index < 8; seed_index = seed_index + 1) begin
+            seed = 32'hC0FFEE + seed_index;
+            run_case(0, 0);
+        end
+        run_case(0, 1); // reset during VDOT
+        run_case(1, 0); // overflow-margin worst case
 
         if (errors == 0) $display("ALL TESTS PASSED");
         else              $display("%0d TEST(S) FAILED", errors);

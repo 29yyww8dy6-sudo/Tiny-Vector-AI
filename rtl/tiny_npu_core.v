@@ -1,9 +1,8 @@
 // Tiny-Vector-AI Tier 0 core.
 //
-// Bring-up choice (ADR-004): VDOT is implemented lane=1, serial -- one
-// INT8xINT8 MAC per cycle, 32 cycles per VDOT. This trades throughput for
-// the simplest possible control path (no adder tree), matching PLANNING.md's
-// M2 strategy of proving fetch/decode/regfile/memory before optimizing.
+// Bring-up choice (ADR-004): VDOT starts at lane=1, serial.  LANES is kept
+// as a microarchitecture parameter so the exact same binary can later run
+// with 4/8/16 parallel INT8xINT8 MACs per cycle.
 // Lane count is a microarchitecture parameter hidden from the ISA
 // (isa_spec_1.md "lane 은닉 조항"): moving to lane=4/8/16 later only changes
 // cycle count, never the binary or the result.
@@ -13,6 +12,7 @@
 module tiny_npu_core #(
     parameter NVREG      = 2,
     parameter ELEMS      = 32,
+    parameter LANES      = 1,
     parameter NACC       = 1,
     parameter IMEM_WORDS = 512,
     parameter DMEM_BYTES = 262144,
@@ -91,12 +91,28 @@ module tiny_npu_core #(
         .rdata(acc_rdata)
     );
 
-    // lane=1 serial VDOT: element index into the 32-element (VLEN=256b) vectors
-    reg [4:0] lane_i;
+    // VDOT consumes LANES elements at once, then adds their reduction to acc.
+    // lane_base is an element index, not an ISA-visible vector length.
+    reg [15:0] lane_base;
+    integer lane;
+    reg signed [31:0] lane_sum;
+    reg signed [7:0] a_elem;
+    reg signed [7:0] b_elem;
+    always @* begin
+        lane_sum = 32'sd0;
+        for (lane = 0; lane < LANES; lane = lane + 1) begin
+            a_elem = vreg_rdata1[(lane_base + lane)*8 +: 8];
+            b_elem = vreg_rdata2[(lane_base + lane)*8 +: 8];
+            lane_sum = lane_sum + a_elem * b_elem;
+        end
+    end
 
-    wire signed [7:0]  a_elem   = vreg_rdata1[lane_i*8 +: 8];
-    wire signed [7:0]  b_elem   = vreg_rdata2[lane_i*8 +: 8];
-    wire signed [31:0] mac_term = a_elem * b_elem;
+// synthesis translate_off
+    initial begin
+        if (LANES < 1 || LANES > ELEMS || (ELEMS % LANES) != 0)
+            $fatal(1, "LANES=%0d must be a positive divisor of ELEMS=%0d", LANES, ELEMS);
+    end
+// synthesis translate_on
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
@@ -108,7 +124,7 @@ module tiny_npu_core #(
             acc_clr      <= 1'b0;
             dmem_ld_en   <= 1'b0;
             dmem_st_en   <= 1'b0;
-            lane_i       <= 5'd0;
+            lane_base    <= 16'd0;
         end else begin
             // pulsed control signals default low every cycle unless a
             // branch below re-asserts them
@@ -167,7 +183,7 @@ module tiny_npu_core #(
                     if (rs1 >= NVREG || rs2 >= NVREG)
                         $fatal(1, "VDOT vreg src out of range (rs1=%0d rs2=%0d, NVREG=%0d) at pc=%0d", rs1, rs2, NVREG, pc);
 // synthesis translate_on
-                    lane_i <= 5'd0;
+                    lane_base <= 16'd0;
                     state  <= S_VDOT;
                 end
 
@@ -217,12 +233,12 @@ module tiny_npu_core #(
             S_VDOT: begin
                 acc_we    <= 1'b1;
                 acc_clr   <= 1'b0;
-                acc_wdata <= mac_term;
-                if (lane_i == 5'd31) begin
+                acc_wdata <= lane_sum;
+                if (lane_base == ELEMS - LANES) begin
                     pc    <= pc + 16'd1;
                     state <= S_FETCH;
                 end else begin
-                    lane_i <= lane_i + 5'd1;
+                    lane_base <= lane_base + LANES;
                     state  <= S_VDOT;
                 end
             end
